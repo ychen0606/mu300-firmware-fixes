@@ -1,0 +1,13 @@
+#!/bin/sh /etc/rc.common
+# S09mu300-charge-mode sorts before the vendor CP loader at S09mu300-vendor.
+# Keep rcS here until the power key is held; later services must not race it.
+START=09
+
+boot() {
+	/opt/mu300/bin/mu300-charge-mode boot
+}
+
+# Installing/enabling/restarting this init script must not suspend a running unit.
+start() {
+	return 0
+}

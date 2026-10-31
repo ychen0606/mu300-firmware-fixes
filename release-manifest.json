@@ -1,0 +1,141 @@
+{
+  "created_at_utc": "2026-10-31T00:48:59.769298+00:00",
+  "kind": "public-source-fixes-and-redacted-verification",
+  "repository": "https://github.com/ychen0606/mu300-firmware-fixes",
+  "tested_firmware": "OpenWrt 25.12.6 / mu300-linux v2026.10.29.1 / u30air",
+  "private_system_images_included": false,
+  "source_files_identical_to_tested_version": true,
+  "files": [
+    {
+      "path": ".gitattributes",
+      "type": "file",
+      "bytes": 97,
+      "mode": "0o644",
+      "sha256": "449305f64de311c4ba3e0ec8f26f83e98d64ae26ec3449b7e0ae8112a496ff20"
+    },
+    {
+      "path": ".gitignore",
+      "type": "file",
+      "bytes": 109,
+      "mode": "0o644",
+      "sha256": "f8be0078598c436bd14829ddf384ae1b5ee64097a0d1642d98cd0789e188167e"
+    },
+    {
+      "path": "INSTALL.md",
+      "type": "file",
+      "bytes": 4330,
+      "mode": "0o644",
+      "sha256": "0db6226cf87585096ba311d172a45fa5c3b7a9fc373f8b72738d5aeaf1ef521b"
+    },
+    {
+      "path": "LICENSE",
+      "type": "file",
+      "bytes": 1149,
+      "mode": "0o644",
+      "sha256": "27f276ceb52f141a9632e0ca13841f829e2a5342b6e6133dd3833358cda84fd7"
+    },
+    {
+      "path": "README.md",
+      "type": "file",
+      "bytes": 4005,
+      "mode": "0o644",
+      "sha256": "6fe4eba37a6fff1661a6fdc558e37be9335bf0c563fc2880229cf7b8f73cc077"
+    },
+    {
+      "path": "charge-only/overlay/etc/init.d/mu300-charge-mode",
+      "type": "file",
+      "bytes": 346,
+      "mode": "0o755",
+      "sha256": "78c7aeedffa397d504a7792f080443731efcade49f8f9dace883acf7356df2eb"
+    },
+    {
+      "path": "charge-only/overlay/etc/rc.d/S09mu300-charge-mode",
+      "type": "symlink",
+      "target": "../init.d/mu300-charge-mode"
+    },
+    {
+      "path": "charge-only/overlay/opt/mu300/bin/mu300-charge-mode",
+      "type": "file",
+      "bytes": 10366,
+      "mode": "0o755",
+      "sha256": "a40ed3abde24dd15a5c31a40370745c1beff9e2cf0028d317220156723a4e001"
+    },
+    {
+      "path": "charge-only/rollback.sh",
+      "type": "file",
+      "bytes": 534,
+      "mode": "0o644",
+      "sha256": "cd4a815db0d42445aee76402f3e55b238ad964810aac2264c4d3e6309d4cea7a"
+    },
+    {
+      "path": "charge-only/smoke_on_device.sh",
+      "type": "file",
+      "bytes": 2947,
+      "mode": "0o644",
+      "sha256": "24531bf9b631475942122878f7f81c4fab05d51f381885e5575aec072e4cf9f4"
+    },
+    {
+      "path": "charge-only/test_charge_mode.py",
+      "type": "file",
+      "bytes": 11667,
+      "mode": "0o644",
+      "sha256": "027357d7f89456579a169389bc9410d391feaa2696e63dd96aae0acb28684f13"
+    },
+    {
+      "path": "fixes/extra-modules",
+      "type": "file",
+      "bytes": 6025,
+      "mode": "0o755",
+      "sha256": "0b00ff79c54a9a5bae66bebd1f486dcfaf83a43349f87e7bd264366e489e5684"
+    },
+    {
+      "path": "fixes/extra-modules.patch",
+      "type": "file",
+      "bytes": 1245,
+      "mode": "0o644",
+      "sha256": "6b1ac598053c6456fc837ffea5a91c913eaeda76e592a9ece5027ab37dc43175"
+    },
+    {
+      "path": "fixes/mu300-led",
+      "type": "file",
+      "bytes": 37571,
+      "mode": "0o755",
+      "sha256": "d166b45e9b8663cac8d1c16627c525a97160533428b8a9facc552a014fd4d520"
+    },
+    {
+      "path": "fixes/mu300-led.patch",
+      "type": "file",
+      "bytes": 3165,
+      "mode": "0o644",
+      "sha256": "edcec8bcec6ee593e1f1d6d513aebe9a09537e708ffb8986ae310cb0f934f475"
+    },
+    {
+      "path": "verification/charging-and-unplug.log",
+      "type": "file",
+      "bytes": 420,
+      "mode": "0o644",
+      "sha256": "364155eed345502f75358a22f061a09895aa2bf084d8ee5343ef93709614d89f"
+    },
+    {
+      "path": "verification/device-ash-smoke.txt",
+      "type": "file",
+      "bytes": 79,
+      "mode": "0o644",
+      "sha256": "670b5a7d03dbd32173b501f05b0a34d27ac7690900e55765439d3456a1cb4b8d"
+    },
+    {
+      "path": "verification/power-button-release.log",
+      "type": "file",
+      "bytes": 268,
+      "mode": "0o644",
+      "sha256": "a7dfdbda880aaaa150d97c2d0db77b76efd545b1b8f633982358e88bf653d9a9"
+    },
+    {
+      "path": "verification/summary.json",
+      "type": "file",
+      "bytes": 1967,
+      "mode": "0o644",
+      "sha256": "b8b34ca52c167d216d4cbfcdbc2776d733b07871bcfd3b485d1c0b995894d338"
+    }
+  ]
+}

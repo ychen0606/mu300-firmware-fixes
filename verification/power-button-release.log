@@ -1,0 +1,7 @@
+4 loaded sprd_soc_thm
+4 loaded thermal-generic-adc
+4 loaded sprd_cpu_cooling
+4 loaded leds-sc27xx-bltc
+4 loaded ledtrig-pattern
+4 charging only; normal services held; hold power for three seconds to start
+40 continuing normal boot: power button held for three seconds

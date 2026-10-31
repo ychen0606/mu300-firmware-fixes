@@ -1,0 +1,11 @@
+4 loaded sprd_soc_thm
+4 loaded thermal-generic-adc
+4 loaded sprd_cpu_cooling
+4 loaded leds-sc27xx-bltc
+4 loaded ledtrig-pattern
+4 charging only; normal services held; hold power for three seconds to start
+25 ignored key event: 116 short
+35 ignored key event: 116 short
+95 ignored key event: 116 short
+364 six-minute charging wait reached without starting normal services
+532 charger absent for two seconds; powering off

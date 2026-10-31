@@ -1,0 +1,2 @@
+PASS: device ash power (fake hardware)
+PASS: device ash unplug (fake hardware)

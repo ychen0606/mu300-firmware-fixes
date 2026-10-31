@@ -1,0 +1,2 @@
+# Unified patches use a literal space as the context marker for blank lines.
+*.patch -whitespace

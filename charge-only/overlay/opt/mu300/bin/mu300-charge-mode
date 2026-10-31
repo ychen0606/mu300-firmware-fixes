@@ -1,0 +1,274 @@
+#!/bin/sh
+# U30 Air / OpenWrt charging-only boot. The LK charger path already runs the PM;
+# wait before the vendor CP loader, hardware bring-up, netifd and button service.
+# Uses the installed mu300-keys text protocol, not the fork's incompatible -c.
+# Configuration: the existing /etc/mu300/power.conf POWER_ON_CHARGER=0|1.
+# Source reference: kanoqwq/mu300-linux 85d72fa9 (MIT); adapted for this firmware.
+export PATH="$PATH:/opt/mu300/bin:/opt/mu300/busybox-bin:/usr/sbin:/sbin"
+R=${MU300_SYSROOT:-}
+BIN=${MU300_BIN:-/opt/mu300/bin}
+CONF=${MU300_POWER_CONF:-$R/etc/mu300/power.conf}
+RUN=$R/run/mu300
+WORK=$RUN/charge-mode
+PST=$RUN/power
+PERSIST=$R/root/mu300-charge-mode
+BB=$BIN/busybox
+reader= fifo_open= entered= released= reason=
+
+rd() { value=; { read -r value < "$1"; } 2>/dev/null; }
+clock_now() {
+    rd "$R/proc/uptime"; seconds=${value%%.*}
+    case $seconds in ''|*[!0-9]*) seconds=0 ;; esac
+}
+say() {
+    clock_now
+    printf '%s %s\n' "$seconds" "$*" >> "$WORK/events.log"
+    [ ! -w "$R/dev/kmsg" ] || printf '<6>mu300-charge-mode: %s\n' "$*" > "$R/dev/kmsg"
+}
+bounded() { "$BB" timeout -k 1 "$@"; }
+led() { bounded 5 "$BIN/mu300-led" "$@" >> "$WORK/led.log" 2>&1; }
+
+charger_boot() {
+    rd "$RUN/boot-mode"
+    case $value in charger) return 0 ;; normal) return 1 ;; esac
+    for args in "$R/proc/cmdline" "$R/proc/device-tree/chosen/bootargs"; do
+        [ -r "$args" ] || continue
+        tr '\000' ' ' < "$args" | grep -Eq '(^|[[:space:]])(androidboot|sprdboot)\.mode=charger([[:space:]]|$)' && return 0
+    done
+    return 1
+}
+auto_power_on() {
+    [ "$(sed -n 's/^POWER_ON_CHARGER=\(.*\)$/\1/p' "$CONF" 2>/dev/null | tail -n 1)" = 1 ]
+}
+eligible() {
+    [ "$("$BIN/mu300-device" 2>/dev/null)" = u30air ] || return 1
+    [ "${FAILSAFE:-}" != true ] && [ ! -e "$R/tmp/.failsafe" ] && [ ! -e "$R/tmp/failsafe" ] || return 1
+    charger_boot && ! auto_power_on
+}
+# Only real charger online flags, never battery/online (which means the battery
+# is present on this kernel). A stale battery Charging status cannot hide unplug.
+# 0: cable present; 1: confirmed absent; 2: no usable supply information.
+supply() {
+    known=0
+    for name in bq2560x_charger bq256xx-charger usb ac; do
+        rd "$R/sys/class/power_supply/$name/online"
+        case $value in 1) return 0 ;; 0) known=1 ;; esac
+    done
+    for ext in "$R"/sys/class/extcon/*/state; do
+        [ -r "$ext" ] || continue
+        while IFS= read -r line; do
+            case $line in USB=1) return 0 ;; USB=0) known=1 ;; esac
+        done < "$ext"
+    done
+    [ "$known" = 1 ] && return 1
+    return 2
+}
+input_ready() {
+    # The live U30 Air has one gpio-keys device, including KEY_POWER=116.
+    # mu300-keys additionally checks EV_KEY when opening its event node.
+    for event in "$R"/sys/class/input/event*; do
+        rd "$event/device/name"
+        [ "$value" = gpio-keys ] && [ -r "$R/dev/input/${event##*/}" ] && return 0
+    done
+    return 1
+}
+stop_reader() {
+    if [ -n "$reader" ]; then
+        kill "$reader" 2>/dev/null
+        wait "$reader" 2>/dev/null
+        reader=
+    fi
+    [ -z "$fifo_open" ] || { exec 8>&-; fifo_open=; }
+    rm -f "$WORK/keys.fifo"
+}
+persist() {
+    # Writes only on entry, after the six-minute stability sample, and on exit.
+    # LED refresh and cable checks otherwise use RAM and sysfs only.
+    mkdir -p "$PERSIST" 2>/dev/null || return 0
+    for name in events.log boot-id proof.txt; do
+        [ -f "$WORK/$name" ] || continue
+        cp "$WORK/$name" "$PERSIST/.$name.new" && mv -f "$PERSIST/.$name.new" "$PERSIST/$name"
+    done
+    sync
+}
+proof() {
+    {
+        printf 'boot-id='; cat "$R/proc/sys/kernel/random/boot_id"
+        printf 'uptime='; cat "$R/proc/uptime"
+        printf 'boot-mode='; cat "$RUN/boot-mode"
+        for name in capacity status temp; do
+            printf 'battery.%s=' "$name"; cat "$R/sys/class/power_supply/battery/$name" 2>/dev/null
+        done
+        printf 'charger.status='; cat "$R/sys/class/power_supply/bq2560x_charger/status" 2>/dev/null
+        printf '\nprocesses while the boot queue is held:\n'
+        ps w
+        printf '\nnetwork interfaces:\n'
+        ls "$R/sys/class/net"
+        printf '\nloaded modules:\n'
+        cat "$R/proc/modules"
+    } > "$WORK/proof.txt" 2>&1
+}
+release_boot() {
+    reason=$1
+    stop_reader
+    # mu300-power starts at S97. Preserve the real LK boot reason but give its
+    # state machine an explicit active state so it does not enter charging again.
+    mkdir -p "$PST"
+    printf '%s\n' "$reason" > "$PST/reason"
+    printf 'active\n' > "$PST/state"
+    printf '%s\n' "$reason" > "$WORK/released"
+    rm -f "$RUN/charging-boot" "$WORK/waiting"
+    released=1
+    say "continuing normal boot: $reason"
+    proof
+    persist
+}
+cleanup() {
+    trap - EXIT TERM INT HUP
+    stop_reader
+    if [ -n "$entered" ] && [ -z "$released" ]; then
+        release_boot "charging wait interrupted; allowing recovery"
+    fi
+}
+
+prepare_modules() {
+    release=$(uname -r)
+    # Charger manager, SQC, fuel gauge, PM IPC and basic thermal sensors are
+    # already loaded by this boot image. Do not load CP/Wi-Fi/GPU for charging.
+    for module in sprd_pmic_wdt sprd_soc_thm thermal-generic-adc sprd_cpu_cooling leds-sc27xx-bltc ledtrig-pattern; do
+        id=$(printf '%s' "$module" | tr '-' '_')
+        [ ! -d "$R/sys/module/$id" ] || continue
+        for file in "$R/lib/modules/$release/$module.ko" "$R/lib/modules/$release/extra/$module.ko"; do
+            [ -f "$file" ] || continue
+            if bounded 5 insmod "$file" >> "$WORK/modules.log" 2>&1; then
+                say "loaded $module"
+            else
+                say "optional module unavailable: $module"
+            fi
+            break
+        done
+    done
+}
+stop_early_dhcp() {
+    rd "$R/run/mu300-early-udhcpd.pid"; dhcp_pid=$value
+    case $dhcp_pid in ''|*[!0-9]*|0|1) return 0 ;; esac
+    [ -r "$R/proc/$dhcp_pid/cmdline" ] || return 0
+    dhcp_cmd=$(tr '\000' ' ' < "$R/proc/$dhcp_pid/cmdline")
+    case $dhcp_cmd in *udhcpd*'/run/udhcpd-usb0.conf'*) kill "$dhcp_pid" 2>/dev/null ;; *) return 0 ;; esac
+    rm -f "$R/run/mu300-early-udhcpd.pid"
+}
+power_off() {
+    # rcS is blocked here. Plain poweroff queues procd shutdown behind this
+    # script; sync and remount read-only before calling the kernel path instead.
+    stop_reader
+    say 'charger absent for two seconds; powering off'
+    proof
+    persist
+    led power off || true
+    led wifi off || true
+    led data off || true
+    bounded 20 "$BIN/mu300-next-boot" --rearm >> "$WORK/shutdown.log" 2>&1 || say 'boot-choice rearm failed'
+    sync
+    mount -o remount,ro / >> "$WORK/shutdown.log" 2>&1 || say 'root read-only remount failed'
+    if mountpoint -q /mnt/mu300-disk; then
+        mount -o remount,ro /mnt/mu300-disk >> "$WORK/shutdown.log" 2>&1 || say 'disk read-only remount failed'
+    fi
+    sync
+    released=poweroff
+    while :; do
+        poweroff -f
+        say 'kernel poweroff returned; retrying'
+        sleep 1
+    done
+}
+
+case ${1:-check} in
+    check)
+        if eligible; then printf 'charger boot: charging-only policy\n'; else printf 'normal boot: no charging wait\n'; fi
+        supply; result=$?
+        printf 'supply=%s (0=connected, 1=disconnected, 2=unknown)\n' "$result"
+        if input_ready; then printf 'power-key input=ready\n'; else printf 'power-key input=unavailable\n'; fi
+        exit 0 ;;
+    boot) ;;
+    *) printf 'usage: %s check|boot\n' "$0" >&2; exit 2 ;;
+esac
+eligible || exit 0
+# A manual boot command or a repeated init invocation cannot trap an active unit.
+rd "$PST/state"
+case $value in active|idle) exit 0 ;; esac
+[ ! -f "$WORK/released" ] || exit 0
+mkdir -p "$WORK" "$PST" || exit 0
+cat "$R/proc/sys/kernel/random/boot_id" > "$WORK/boot-id" 2>/dev/null
+[ -x "$BB" ] && [ -x "$BIN/mu300-keys" ] || { release_boot 'charging helper unavailable'; exit 0; }
+entered=1
+trap cleanup EXIT
+trap 'exit 0' TERM INT HUP
+prepare_modules
+
+# Allow input and supply hotplug to settle, without converting an absent cable
+# into a normal boot. Hardware failure opens the gate so a bad node is recoverable.
+ready=0
+for retry in 1 2 3 4 5; do
+    supply; plugged=$?
+    if [ "$plugged" != 2 ] && input_ready; then ready=1; break; fi
+    sleep 1
+done
+if [ "$ready" != 1 ]; then release_boot 'input or supply unavailable'; exit 0; fi
+printf 'charging-boot\n' > "$PST/state"
+printf 'early charging wait; hold power for three seconds\n' > "$PST/reason"
+: > "$RUN/charging-boot"
+: > "$WORK/waiting"
+stop_early_dhcp
+led boot off || true
+led wifi off || true
+led data off || true
+led battery || true
+say 'charging only; normal services held; hold power for three seconds to start'
+persist
+
+rm -f "$WORK/keys.fifo"
+mkfifo "$WORK/keys.fifo" || { release_boot 'key event pipe unavailable'; exit 0; }
+exec 8<>"$WORK/keys.fifo"
+fifo_open=1
+"$BIN/mu300-keys" -l 3000 -t 1 > "$WORK/keys.fifo" 2> "$WORK/keys.log" 8>&- &
+reader=$!
+clock_now; started=$seconds last_event=$seconds last_led=$seconds
+absent_since= unknown_since= sampled=
+while :; do
+    code= kind=
+    if read -r -t 2 code kind <&8; then
+        clock_now; last_event=$seconds
+    else
+        clock_now
+        if ! kill -0 "$reader" 2>/dev/null || [ $((seconds - last_event)) -ge 6 ]; then
+            release_boot 'key reader stopped responding'; exit 0
+        fi
+    fi
+    supply; plugged=$?
+    case $plugged in
+        0) absent_since= unknown_since= ;;
+        1)
+            unknown_since=
+            [ -n "$absent_since" ] || absent_since=$seconds
+            [ $((seconds - absent_since)) -lt 2 ] || power_off ;;
+        2)
+            absent_since=
+            [ -n "$unknown_since" ] || unknown_since=$seconds
+            if [ $((seconds - unknown_since)) -ge 5 ]; then release_boot 'supply readings disappeared'; exit 0; fi ;;
+    esac
+    if ! input_ready; then release_boot 'power-key input disappeared'; exit 0; fi
+    case "$code $kind" in
+        '116 long') release_boot 'power button held for three seconds'; exit 0 ;;
+        *' short'|*' long') say "ignored key event: $code $kind" ;;
+    esac
+    if [ $((seconds - last_led)) -ge 5 ]; then
+        led battery || true
+        last_led=$seconds
+    fi
+    if [ -z "$sampled" ] && [ $((seconds - started)) -ge 360 ]; then
+        say 'six-minute charging wait reached without starting normal services'
+        proof
+        persist
+        sampled=1
+    fi
+done

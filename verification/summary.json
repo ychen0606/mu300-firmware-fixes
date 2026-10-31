@@ -1,0 +1,47 @@
+{
+  "tested_device_model": "ZTE U30 Air / MU300 (u30air)",
+  "openwrt_version": "25.12.6",
+  "mu300_linux_version": "v2026.10.29.1",
+  "kernel": "5.4.254-gb50db5b6224c",
+  "test_date_utc": "2026-10-30",
+  "scope": "One physical U30 Air device; other devices and firmware versions were not tested.",
+  "host_simulated_cases_passed": 17,
+  "device_busybox_ash_simulated_cases_passed": 2,
+  "device_shell_syntax": "passed",
+  "installed_file_digests_verified": true,
+  "physical_tests": {
+    "continuous_charge_only": {
+      "status": "passed",
+      "wait_seconds": 528,
+      "entered_at_uptime_seconds": 4,
+      "six_minute_marker_at_uptime_seconds": 364,
+      "unplug_poweroff_at_uptime_seconds": 532,
+      "normal_network_and_modem_services_absent": true,
+      "evidence": "charging-and-unplug.log"
+    },
+    "unplug_while_charging": {
+      "status": "passed",
+      "all_leds_off_and_stayed_off": true,
+      "subsequent_power_button_boot_worked": true
+    },
+    "power_button_release_during_charging": {
+      "status": "passed",
+      "released_at_uptime_seconds": 40,
+      "same_boot_identity_before_and_after": true,
+      "hotspot_connection_confirmed": true,
+      "internet_access_confirmed": true,
+      "evidence": "power-button-release.log"
+    }
+  },
+  "tailscale_autostart": {
+    "enabled": true,
+    "auto_started_after_charge_gate_release": true,
+    "daemon_start_uptime_seconds": 42.58,
+    "verified_backend_state": "Running",
+    "verified_self_online": true,
+    "health_issues": [],
+    "note": "Existing Tailscale installation; enable and sync recorded. Network addresses, account state and keys are omitted."
+  },
+  "early_led_behavior": "Wi-Fi and signal LEDs briefly illuminate after charger insertion before the charging wait takes control; afterward only the battery LED remains.",
+  "evidence_scope": "Selected event logs and summarized checks. Full system images, raw device identity and management logs are not included."
+}

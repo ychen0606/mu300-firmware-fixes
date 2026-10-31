@@ -1,0 +1,61 @@
+--- a/opt/mu300/bin/mu300-led
++++ b/opt/mu300/bin/mu300-led
+@@ -261,7 +261,7 @@
+ # --- the U30 Air's battery LED (FINDINGS 151): ZTE's services.jar ZteBatteryService and its lights HAL
+ # ZTE's levels: white (the green channel) 120, blue 200, red 150 of 255
+ battery_level() { case $1 in green) echo 120 ;; blue) echo 200 ;; red) echo 150 ;; esac; }
+-# battery_read: "COLOUR MODE LOW PLUGGED" into _br from the fuel gauge (mainline sc27xx-fgu, the 5.4 kernel's "battery")
++# battery_read: "COLOUR MODE LOW PLUGGED" into _br from the battery (5.4's charger-manager, mainline's sc27xx-fgu)
+ # and the charger (bq256xx-charger, or the 5.4 kernel's usb/ac); false without a capacity. Every file it reads goes
+ # into the tick's hint with what it held (hint_in), the ones that are not there as "-".
+ HINT_IN=
+@@ -269,15 +269,32 @@
+ "; }   # hint_in FILE: FILE held $v (rd FILE just before)
+ battery_read() {
+     _b=
+-    for _d in "$PSY/sc27xx-fgu" "$PSY/battery"; do [ -r "$_d/capacity" ] && { _b=$_d; break; }; done
+-    [ -n "$_b" ] || return 1
+-    rd "$_b/capacity"; hint_in "$_b/capacity"; _cap=$v
++    # The vendor 5.4 fuel gauge reports tenths of a percent (451 means 45.1%) and has no status.
++    # Prefer charger-manager's normalised percentage; mainline's gauge is already in percent.
++    for _d in "$PSY/battery" "$PSY/sc27xx-fgu"; do
++        rd "$_d/capacity"; hint_in "$_d/capacity"
++        case $v in ''|*[!0-9]*) continue ;; esac
++        [ "$v" -le 100 ] || continue
++        _b=$_d _cap=$v
++        break
++    done
++    [ -n "$_b" ] || return 1
+     rd "$_b/status"; hint_in "$_b/status"; _st=$v
+-    case $_cap in ''|*[!0-9]*) return 1 ;; esac
++    # On 5.4 charger-manager can say Unknown while the bq2560x chip reports Charging or Full.
++    case $_st in
++        Charging|Full|Discharging|'Not charging') ;;
++        *)
++            for _d in "$PSY/bq2560x_charger" "$PSY/bq256xx-charger"; do
++                rd "$_d/status"; hint_in "$_d/status"
++                case $v in
++                    Charging|Full|Discharging|'Not charging') _st=$v; break ;;
++                esac
++            done ;;
++    esac
+     # outside power: the charger's online flag, when there is one. The gauge says "Charging" for a while after
+     # an unplug (kano saw it), so its status alone counts only where no charger says anything
+     _on=
+-    for _d in "$PSY/bq256xx-charger" "$PSY/usb" "$PSY/ac"; do
++    for _d in "$PSY/bq256xx-charger" "$PSY/bq2560x_charger" "$PSY/usb" "$PSY/ac"; do
+         rd "$_d/online"; hint_in "$_d/online"
+         [ "$v" != - ] || continue
+         [ "$v" = 1 ] && { _on=1; break; }
+@@ -296,6 +313,11 @@
+ battery_show() {
+     [ -n "$BATTERY_LED" ] || return 0
+     { [ -e "$STATE/.alarm" ] || boot_running; } && return 0
++    # Hardware bring-up runs after the first power-on update. Do not remember a colour as shown
++    # before its driver exists, so the next tick paints it once the RGB channels are available.
++    for _c in red green blue; do
++        [ -w "$LEDS/sc27xx:$_c/brightness" ] || return 0
++    done
+     _bc= _bm= _bl=
+     [ ! -r "$STATE/.battery" ] || read -r _bc _bm _bl < "$STATE/.battery"
+     _bw=off

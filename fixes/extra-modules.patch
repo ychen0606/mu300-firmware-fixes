@@ -1,0 +1,22 @@
+--- a/opt/mu300/bin/extra-modules
++++ b/opt/mu300/bin/extra-modules
+@@ -61,8 +61,17 @@
+     if modprobe "$m" 2>/dev/null || insmod "$f" 2>/dev/null; then echo "loaded $m"; else echo "FAILED $m"; fi
+ done
+ 
+-for m in sprd_soc_thm thermal-generic-adc sprd_cpu_cooling leds-sc27xx-bltc zte_sar zte_card_holder_det sc27xx-vibra sprd_cp_dvfs sprd_ddr_dvfs sprd_gpu_cooling mali_kbase; do
+-    if modprobe "$m" 2>/tmp/mu300-modprobe.err; then
++# Some 5.4 images carry the LED modules without a depmod index. Load those by path as well;
++# the pattern trigger lets the PMIC run the charging breath without a userspace blinking loop.
++for m in sprd_soc_thm thermal-generic-adc sprd_cpu_cooling leds-sc27xx-bltc ledtrig-pattern zte_sar zte_card_holder_det sc27xx-vibra sprd_cp_dvfs sprd_ddr_dvfs sprd_gpu_cooling mali_kbase; do
++    if modprobe "$m" 2>/tmp/mu300-modprobe.err || {
++        case $m in
++            leds-sc27xx-bltc|ledtrig-pattern)
++                _led_name=$(printf '%s' "$m" | tr '-' '_')
++                [ -d "/sys/module/$_led_name" ] || insmod "$M/$m.ko" 2>>/tmp/mu300-modprobe.err ;;
++            *) false ;;
++        esac
++    }; then
+         echo "loaded $m"
+     else
+         echo "FAILED $m: $(cat /tmp/mu300-modprobe.err)"
